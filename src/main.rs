@@ -6,7 +6,8 @@ use std::io;
 enum Tile {
     X,
     O,
-    Empty
+    Empty,
+    Cat
 }
 use crate::Tile::*;
 
@@ -57,6 +58,7 @@ impl Board {
         }
     }
 
+    #[allow(unused)]
     fn place_drop(&mut self, tile: Tile, column: usize) -> Result<(), BoardErr> {
         if column >= self.width() {
             return Err(BoardErr::BoundsError);
@@ -76,7 +78,11 @@ impl Board {
                 tile => return tile
             }
         }
-        Empty
+        if self.0.as_row_major().iter().all(|&t| t != Empty) {
+            Cat
+        } else {
+            Empty
+        }
     }
 
     fn all_straights(&self) -> Vec<Vec<Tile>> {
@@ -165,22 +171,40 @@ impl Board {
 
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for row in self.0.rows_iter() {
-            for tile in row {
+        write!(f, "  ").unwrap();
+        for col_num in 1..=self.0.num_columns() {
+            write!(f, " {col_num} ").unwrap();
+        }
+        for (row_num, row_iter) in self.0.rows_iter().enumerate() {
+            write!(f, "\n").unwrap();
+            write!(f, "{} ", row_num + 1).unwrap();
+            for tile in row_iter {
                 write!(f, " {tile} ").unwrap();
             }
-            write!(f, "\n").unwrap();
         }
         write!(f, "\n")
     }
 }
 
+fn prompt (query: &str) -> String {
+    loop {
+        println!("{}", query);
+
+        let mut out = String::new();
+
+
+        match io::stdin().read_line(&mut out) {
+            Ok(_) => return out,
+            Err(_) => println!("Failed to read line")
+        }
+    }
+}
 fn main() {
-    let width = 7;
-    let height = 6;
+    let width = 3;
+    let height = 3;
     let mut board = Board::new(Empty, width, height);
     let mut _pos = 0;
-    let winning_score = 4;
+    let winning_score = 3;
     macro_rules! place {
         ($tile:expr => ($row:expr, $col:expr)$(;)*) => {
             board.place(
@@ -243,32 +267,25 @@ fn main() {
         };
     }
 
-    // {
-    //     let e = Empty;
-    //     place!(
-    //         e, e, e, e, e, e, e,
-    //         e, e, e, e, e, e, e,
-    //         e, e, O, e, e, e, e,
-    //         e, O, O, O, X, e, e,
-    //         e, X, X, X, O, e, e,
-    //         e, O, X, X, X, O, e;
-    //     ).unwrap();
-    //     clear!();
-    //     match place!(
-    //         X => v(1);
-    //         X => v(1);
-    //         X => v(1);
-    //         X => v(1);
-    //         X => v(1);
-    //         X => v(1);
-    //         O => v(3);
-    //         O => v(3)
-    //     ) {
-    //         Err(BoardErr::BoundsError) => panic!("We're out of bounds!"),
-    //         Err(BoardErr::BlockedError) => println!("You can't put that there..."),
-    //         _ => ()
-    //     };
-    // }
+    macro_rules! prompt_num {
+        ($query:expr) => {
+            loop {
+                match prompt($query).trim().parse() {
+                    Err(_) => println!("That was not a valid number--try again"),
+                    Ok(num) => break num
+                };
+            }
+        };
+
+        ($query:expr => ($lower_bound:expr, $upper_bound:expr)) => {
+            loop {
+                match prompt_num!($query) {
+                    num if (num >= $lower_bound && num <= $upper_bound) => break num,
+                    _ => println!("Number out of bounds--try again"),
+                };
+            }
+        };
+    }
 
     loop {
         let mut turn:usize = 0;
@@ -276,6 +293,11 @@ fn main() {
             print_board!();
             match board.winner(winning_score) {
                 Empty => (),
+                Cat => {
+                    println!("There are no spaces left.");
+                    println!("Nobody wins");
+                    break
+                },
                 tile => {
                     println!("{tile} got {winning_score} in a row!");
                     println!("{tile} wins!");
@@ -292,44 +314,29 @@ fn main() {
 
             println!("It's {tile}'s turn");
 
-            println!("{tile}, which column do you want to place your piece?");
-            let mut col = String::new();
+            println!();
+            let col: usize = prompt_num!("Select a column: " => (1, width));
+            let row: usize = prompt_num!("Select a row: " => (1, height));
 
-            io::stdin()
-                .read_line(&mut col)
-                .expect("Failed to read line");
 
-            let col: usize = match col.trim().parse() {
-                Ok(num) => num,
-                _ => {
-                    println!("That wasn't a positive number--try again");
-                    continue
-                }
-            };
-
-            match place!(tile => v(col);) {
+            match place!(tile => (row, col);) {
                 Ok(()) => turn += 1,
                 Err(BoardErr::BlockedError) => {
-                    println!("Column {col} is full--try somewhere else");
+                    println!("That space is full--try somewhere else");
                     continue;
                 },
                 Err(BoardErr::BoundsError) => {
-                    println!("There is no column {col}--try a column between 1 and {width}");
+                    println!("That space is out of bounds--try somewhere else");
                     continue;
                 }
             }
         }
 
-        println!("Play again? (Y/n)");
-        let mut play_again = String::new();
-        io::stdin()
-            .read_line(&mut play_again)
-            .expect("Failed to read line");
+        let play_again = prompt("Play again? (Y/n)");
 
-        if play_again.starts_with(&['y', 'Y']) {
-            clear!();
-            continue;
+        if play_again.starts_with(&['n', 'N']) {
+            break;
         }
-        break;
+        clear!();
     }
 }
