@@ -199,12 +199,54 @@ fn prompt (query: &str) -> String {
         }
     }
 }
+
+macro_rules! prompt_num {
+    ($query:expr) => {
+        loop {
+            match prompt($query).trim().parse() {
+                Err(_) => println!("That was not a valid number--try again"),
+                Ok(num) => break num
+            };
+        }
+    };
+
+    ($query:expr => ($lower_bound:expr, $upper_bound:expr)) => {
+        loop {
+            match prompt_num!($query) {
+                num if (num >= $lower_bound && num <= $upper_bound) => break num,
+                _ => println!("Number out of bounds--try again"),
+            };
+        }
+    };
+}
+
+macro_rules! prompt_yn {
+    ($query:expr) => {
+        ! prompt($query).starts_with(&['n', 'N'])
+    };
+}
+
+enum Game {
+    TicTacToe,
+    ConnectFour
+}
+
+impl fmt::Display for Game {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TicTacToe => write!(f, "Tic-tac-toe"),
+            Self::ConnectFour => write!(f, "Connect Four")
+        }
+    }
+}
+
 fn main() {
-    let width = 3;
-    let height = 3;
-    let mut board = Board::new(Empty, width, height);
+    let mut width: usize;
+    let mut height: usize;
+    let mut winning_score: usize;
+    let mut gravity: bool;
+    let mut board: Board;
     let mut _pos = 0;
-    let winning_score = 3;
     macro_rules! place {
         ($tile:expr => ($row:expr, $col:expr)$(;)*) => {
             board.place(
@@ -249,13 +291,9 @@ fn main() {
                 err => err
             }
         }};
-
-
-
-
     }
 
-    macro_rules! clear {
+    macro_rules! init_board {
         () => {
             board = Board::new(Empty, width, height)
         };
@@ -267,76 +305,98 @@ fn main() {
         };
     }
 
-    macro_rules! prompt_num {
-        ($query:expr) => {
-            loop {
-                match prompt($query).trim().parse() {
-                    Err(_) => println!("That was not a valid number--try again"),
-                    Ok(num) => break num
-                };
-            }
-        };
-
-        ($query:expr => ($lower_bound:expr, $upper_bound:expr)) => {
-            loop {
-                match prompt_num!($query) {
-                    num if (num >= $lower_bound && num <= $upper_bound) => break num,
-                    _ => println!("Number out of bounds--try again"),
-                };
-            }
-        };
-    }
-
     loop {
-        let mut turn:usize = 0;
+        let game: Game = match prompt(
+            "Which game do you want to play?\n\n\t(T)ic-tac-toe\n\n\t(C)onnect four\n") {
+            g if g.starts_with(&['T', 't']) => {
+                Game::TicTacToe
+            },
+            g if g.starts_with(&['C', 'c', '4']) => {
+                Game::ConnectFour
+            },
+            _ =>
+                if prompt_yn!("Do you want to quit? (Y/n)") {
+                    break;
+                }
+                else {
+                    continue;
+                }
+        };
+        match game {
+            Game::ConnectFour => {
+                width = 7;
+                height = 6;
+                winning_score = 4;
+                gravity = true;
+            }
+            Game::TicTacToe => {
+                width = 3;
+                height = 3;
+                winning_score = 3;
+                gravity = false;
+            }
+        }
+
         loop {
-            print_board!();
-            match board.winner(winning_score) {
-                Empty => (),
-                Cat => {
-                    println!("There are no spaces left.");
-                    println!("Nobody wins");
-                    break
-                },
-                tile => {
-                    println!("{tile} got {winning_score} in a row!");
-                    println!("{tile} wins!");
-                    break
+            println!("\n\n\nLet's play {}!\n", game);
+            init_board!();
+            let mut turn:usize = 0;
+            loop {
+                print_board!();
+                match board.winner(winning_score) {
+                    Empty => (),
+                    Cat => {
+                        println!("There are no spaces left.");
+                        println!("Nobody wins");
+                        break
+                    },
+                    tile => {
+                        println!("{tile} got {winning_score} in a row!");
+                        println!("{tile} wins!");
+                        break
+                    }
+                }
+
+                let tile = if turn % 2 == 0 {
+                    X
+                }
+                else {
+                    O
+                };
+
+                println!("It's {tile}'s turn");
+
+                println!();
+
+                let placement_result = if gravity {
+                    let col: usize = prompt_num!("Select a column: " => (1, width));
+                    place!(tile => v(col))
+                }
+                else {
+                    let col: usize = prompt_num!("Select a column: " => (1, width));
+                    let row: usize = prompt_num!("Select a row: " => (1, height));
+                    place!(tile => (row, col))
+                };
+
+
+                match placement_result {
+                    Ok(()) => turn += 1,
+                    Err(BoardErr::BlockedError) => {
+                        println!("That space is full--try somewhere else");
+                        continue;
+                    },
+                    Err(BoardErr::BoundsError) => {
+                        println!("That space is out of bounds--try somewhere else");
+                        continue;
+                    }
                 }
             }
 
-            let tile = if turn % 2 == 0 {
-                X
-            }
-            else {
-                O
-            };
+            let play_again = prompt("Play again? (Y/n)");
 
-            println!("It's {tile}'s turn");
-
-            println!();
-            let col: usize = prompt_num!("Select a column: " => (1, width));
-            let row: usize = prompt_num!("Select a row: " => (1, height));
-
-
-            match place!(tile => (row, col);) {
-                Ok(()) => turn += 1,
-                Err(BoardErr::BlockedError) => {
-                    println!("That space is full--try somewhere else");
-                    continue;
-                },
-                Err(BoardErr::BoundsError) => {
-                    println!("That space is out of bounds--try somewhere else");
-                    continue;
-                }
+            if play_again.starts_with(&['n', 'N']) {
+                break;
             }
         }
-
-        let play_again = prompt("Play again? (Y/n)");
-
-        if play_again.starts_with(&['n', 'N']) {
-            break;
-        }
-        clear!();
     }
 }
